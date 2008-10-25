@@ -8,6 +8,14 @@
   (:use :cl #:drakma #:json)
   (:export
 
+   ;; Object names:
+   #:rtm-user-info
+   #:contact
+   #:contact-group
+   #:task-list
+   #:task
+   #:location
+
    ;; Variables:
    #:rtm-api-key
    #:rtm-api-shared-secret
@@ -16,6 +24,7 @@
 
    ;; Dynamic variables
    #:*last-transaction*
+   #:*rtm-api-current-frob*
    #:*rtm-api-token*
    #:*rtm-api-perms*
    #:*rtm-api-user*

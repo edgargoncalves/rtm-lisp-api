@@ -30,7 +30,10 @@
 	       (:module :src
 			:components ((:file "packages")
 				     (:file "rtm-lisp-api"
-					    :depends-on ("packages"))))))
+					    :depends-on ("packages"))
+				     (:file "rtm-model"
+					    :depends-on ("packages"
+							 "rtm-lisp-api"))))))
 
 #|
 The MIT License
