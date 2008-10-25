@@ -113,6 +113,13 @@ Can't be redone."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; RTM Method call utility
 
+(define-condition rtm-error ()
+  ((code :accessor get-code :initarg :code)
+   (message :accessor get-message :initarg :message)))
+
+(defmethod print-object ((c rtm-error) stream)
+  (format stream "RTM returned error with code ~a: ~a" (get-code c) (get-message c)))
+
 (defun rtm-api-call-method (method &optional key-value-pairs &key with-timeline with-authentication (format "json"))
   "Calls `METHOD'.
  - Optionally passes pairs of strings in `KEY-VALUE-PAIRS' in the form
@@ -148,21 +155,22 @@ specifies the server reply format."
 	   (rest response))
 	  ((string=  (cdr stat) "fail")
 	   (let ((err-info (cdr (assoc :err response))))
-	     (error "RTM error code ~a: ~a~%" (cdr (assoc :code err-info))
-		    (cdr (assoc :msg err-info))))))))))
+	     (error 'rtm-error
+		    :code (cdr (assoc :code err-info))
+		    :message (cdr (assoc :msg err-info))))))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Authenticating the application using a frob
-(defvar rtm-api-current-frob "")
+(defvar *rtm-api-current-frob* "")
 
 (defun rtm-api-invalid-frob-p (frob)
   (or (null frob)
       (string= "" frob)))
 
 (defun rtm-api-get-frob ()
-  (setf rtm-api-current-frob "")
-  (setf rtm-api-current-frob
+  (setf *rtm-api-current-frob* "")
+  (setf *rtm-api-current-frob*
 	(cdr (assoc :frob (rtm-api-call-method "rtm.auth.getFrob")))))
 
 (defun rtm-api-build-auth-url (&key (perms "delete"))
@@ -190,7 +198,7 @@ specifies the server reply format."
 	 (cdr
 	  (assoc :auth
 		 (rtm-api-call-method "rtm.auth.getToken"
-				      `(("frob" . ,rtm-api-current-frob)))))))
+				      `(("frob" . ,*rtm-api-current-frob*)))))))
     
     (setf *rtm-api-token* (cdr (assoc :token auth)))
     (setf *rtm-api-perms* (cdr (assoc :perms auth)))
@@ -204,15 +212,19 @@ specifies the server reply format."
 ;; OpenMCL):
 ; (ccl::run-program "open" (list (rtm-api-build-auth-url)))
 
-;; Then call the next method to set our torrent in `*RTM-API-TOKEN*'.
+;; Then call the next method to set our token in `*RTM-API-TOKEN*'.
 ;(rtm-api-get-token)
 |#
 
 ;;;rtm.auth.checkToken
 (defun rtm-api-check-token ()
-  (assoc :auth
-	 (rtm-api-call-method "rtm.auth.checkToken"
-			      `(("auth_token" . ,*rtm-api-token*)))))
+  (let ((auth (cdr
+	       (assoc :auth
+		      (rtm-api-call-method "rtm.auth.checkToken"
+					   `(("auth_token" . ,*rtm-api-token*)))))))
+    (setf *rtm-api-token* (cdr (assoc :token auth)))
+    (setf *rtm-api-perms* (cdr (assoc :perms auth)))
+    (setf *rtm-api-user*  (cdr (assoc :user auth)))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -233,10 +245,11 @@ specifies the server reply format."
 
 ;;;rtm.contacts.getList
 (defun rtm-api-contacts-get-list ()
-  (cdr (assoc :contacts
-	 (rtm-api-call-method "rtm.contacts.getList"
-			      nil
-			      :with-authentication t))))
+  (cdr (assoc :contact
+	      (cdr (assoc :contacts
+			  (rtm-api-call-method "rtm.contacts.getList"
+					       nil
+					       :with-authentication t))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; Groups
@@ -265,9 +278,11 @@ specifies the server reply format."
 
 ;;;rtm.groups.getList
 (defun rtm-api-groups-get-list ()
-  (rtm-api-call-method "rtm.groups.getList"
-		       nil
-		       :with-authentication t))
+  (cdr (assoc :group
+	      (cdr (assoc :groups
+			  (rtm-api-call-method "rtm.groups.getList"
+					       nil
+					       :with-authentication t))))))
 
 ;;;rtm.groups.removeContact
 (defun rtm-api-groups-remove-contact (group-id contact-id)
@@ -304,9 +319,11 @@ specifies the server reply format."
 
 ;;;rtm.lists.getList
 (defun rtm-api-lists-get-list ()
-  (rtm-api-call-method "rtm.lists.getList"
-		       nil
-		       :with-authentication t))
+  (cdr (assoc :list
+	      (cdr (assoc :lists
+			  (rtm-api-call-method "rtm.lists.getList"
+					       nil
+					       :with-authentication t))))))
 
 
 ;;;rtm.lists.setDefaultList
@@ -336,11 +353,12 @@ specifies the server reply format."
 
 ;;;rtm.locations.getList
 (defun rtm-api-locations-get-list ()
-  (cdr (assoc :locations
-	      (rtm-api-call-method "rtm.locations.getList"
-				   nil
-				   :with-authentication t
-				   :with-timeline t))))
+  (cdr (assoc :location
+	      (cdr (assoc :locations
+			  (rtm-api-call-method "rtm.locations.getList"
+					       nil
+					       :with-authentication t
+					       :with-timeline t))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; Reflection
@@ -408,14 +426,21 @@ specifies the server reply format."
 
 ;;;rtm.tasks.getList
 (defun rtm-api-tasks-get-list (list-id &key filter last-sync)
-  (rtm-api-call-method "rtm.tasks.getList"
-		       `(("list_id"       . ,list-id)
-			 ,@(when filter
-				 `(("filter" . ,filter)))
-			,@(when last-sync
-				 `(("last_sync" . ,last-sync))))
-		       :with-authentication t
-		       :with-timeline t))
+  (let ((result
+	 (cdr (assoc :list
+		(cdr (assoc :tasks
+			    (rtm-api-call-method "rtm.tasks.getList"
+						 `(("list_id"       . ,list-id)
+						   ,@(when filter
+							   `(("filter" . ,filter)))
+						   ,@(when last-sync
+							   `(("last_sync" . ,last-sync))))
+						 :with-authentication t
+						 :with-timeline t)))))))
+    ;; RTM returns a nested group or a single list, depending on the list-id:
+    (if (atom (caar result))
+	(list result)
+	result)))
 
 ;;;rtm.tasks.movePriority
 (defun rtm-api-tasks-move-priority (list-id taskseries-id task-id direction)
@@ -428,12 +453,11 @@ specifies the server reply format."
 		       :with-timeline t))
 
 ;;;rtm.tasks.moveTo
-(defun rtm-api-tasks-move-to (from-list-id to-list-id taskseries-id task-id direction)
+(defun rtm-api-tasks-move-to (from-list-id to-list-id taskseries-id task-id)
   (rtm-api-call-method "rtm.tasks.moveTo"
 		       `(("from_list_id"  . ,from-list-id)
 			 ("to_list_id"    . ,to-list-id)
 			 ("taskseries_id" . ,taskseries-id)
-			 ("direction"     . ,direction)
 			 ("task_id"       . ,task-id))
 		       :with-authentication t
 		       :with-timeline t))
@@ -558,14 +582,15 @@ specifies the server reply format."
 
 ;;;rtm.tasks.notes.add
 (defun rtm-api-tasks-notes-add (list-id taskseries-id task-id note-title note-text)
-  (rtm-api-call-method "rtm.tasks.notes.add"
-		       `(("list_id" . ,list-id)
-			 ("taskseries_id" . ,taskseries-id)
-			 ("taskseries_id" . ,task-id)
-			 ("note_title" . ,note-title)
-			 ("note_text" . ,note-text))
-		       :with-authentication t
-		       :with-timeline t))
+  (cdr (assoc :note
+	      (rtm-api-call-method "rtm.tasks.notes.add"
+				   `(("list_id" . ,list-id)
+				     ("taskseries_id" . ,taskseries-id)
+				     ("task_id" . ,task-id)
+				     ("note_title" . ,note-title)
+				     ("note_text" . ,note-text))
+				   :with-authentication t
+				   :with-timeline t))))
 
 ;;;rtm.tasks.notes.delete
 (defun rtm-api-tasks-notes-delete (note-id)
@@ -576,7 +601,7 @@ specifies the server reply format."
 
 ;;;rtm.tasks.notes.edit
 (defun rtm-api-tasks-notes-edit (note-id note-title note-text)
-  (rtm-api-call-method "rtm.tasks.notes.add"
+  (rtm-api-call-method "rtm.tasks.notes.edit"
 		       `(("note_id" . ,note-id)
 			 ("note_title" . ,note-title)
 			 ("note_text" . ,note-text))
