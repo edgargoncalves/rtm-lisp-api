@@ -22,7 +22,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Object model for the RTM entities
 
-
 ;;; User information
 (defclass rtm-user-info ()
   ((id             :accessor get-id             :initarg :id)
@@ -32,11 +31,10 @@
    (contacts       :accessor get-contacts       :initarg :contacts       :initform nil)
    (contact-groups :accessor get-contact-groups :initarg :contact-groups :initform nil)
    (locations      :accessor get-locations      :initarg :locations      :initform nil)
-   (tasks          :accessor get-tasks          :initarg :tasks          :initform nil)
    (task-lists     :accessor get-task-lists     :initarg :task-lists     :initform nil)))
 
 (defvar *rtm-user-info* nil)
-(setf *rtm-user-info* (make-instance 'rtm-user-info))
+(setf *rtm-user-info* (make-instance 'rtm-user-info))  
 
 
 (defclass rtm-object ()
@@ -266,9 +264,10 @@
    #'append
    (mapcar
     #'(lambda (list)
-	(mapcar
+	(mapcan
 	 #'(lambda (taskseries)
-	     (let* ((task         (cdr (assoc :task taskseries)))
+	     (when (cdr (assoc :task taskseries)) ;; Make sure we have no empty taskseries, useless to us...
+	     (list (let* ((task (cdr (assoc :task taskseries)))
 		    (participants
 		     (mapcar #'(lambda (c)
 				 (let ((c (cdr c)))
@@ -293,12 +292,12 @@
 			     (cdr (assoc :tags taskseries))))
 		    (recurrence
 		     (let ((rrule (cdr (assoc :rrule taskseries))))
-		     `((:every . ,(when (from-rtm-type 'bool
-						       (cdr (assoc :every rrule)))
-					(cdr (assoc :$t rrule))))
-		       (:after . ,(when (from-rtm-type 'bool
-						       (cdr (assoc :after rrule)))
-					(cdr (assoc :$t rrule)))))))
+		       `((:every . ,(when (from-rtm-type 'bool
+							 (cdr (assoc :every rrule)))
+					  (cdr (assoc :$t rrule))))
+			 (:after . ,(when (from-rtm-type 'bool
+							 (cdr (assoc :after rrule)))
+					  (cdr (assoc :$t rrule)))))))
 		    (new-task
 		     (make-instance 'task
 				    :list-id       (cdr (assoc :id list))
@@ -326,7 +325,7 @@
 								  (cdr (assoc :postponed task)))
 				    :estimate      (cdr (assoc :estimate task)))))
 	       (mapcar #'(lambda (n) (setf (get-task n) new-task)) (get-notes new-task))
-	       new-task))
+	       new-task))))
 	 (let ((taskseries (cdr (assoc :taskseries list))))
 	   (if (atom (caar taskseries))
 	       (list taskseries)
@@ -338,7 +337,7 @@
 (defun rtm-refresh-all-lists ()
   (dolist (l (reverse (get-task-lists *rtm-user-info*)))
     ;;(format t "RTM refreshing list ~a...~%" (get-name l))
-    (rtm-list-tasks-on-list l)))
+    (setf (get-tasks l) (rtm-list-tasks-on-list l))))
 
 ;;(rtm-refresh-all-lists)
 
@@ -581,15 +580,6 @@
     (pushnew new-note (get-notes task) :key #'get-id :test #'string=)
     new-note)))
 
-;; (rtm-list-task-lists)
-
-;; (rtm-add-note-to-task (nth 0 (rtm-list-tasks-on-list (nth 4 (get-task-lists *rtm-user-info*))))
-;; 	      "aaa" "eeee")
-
-;; (rtm-delete-note (nth 0 (get-notes (nth 0 (rtm-list-tasks-on-list (nth 4 (get-task-lists *rtm-user-info*)))))))
-
-;; (rtm-edit-note (nth 0 (get-notes (nth 0 (rtm-list-tasks-on-list (nth 4 (get-task-lists *rtm-user-info*))))))
-;; 	       "yadda" "weeee!")
 
 
 (defmethod rtm-delete-note ((n note))
@@ -606,3 +596,36 @@
 	  (get-modified n) (cdr (assoc :modified alist)))
     n))
 
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Object initialization
+
+(defun init-rtm ()
+  "Assumes we already got a token or checked the current one."
+  (let ((result (make-instance 'rtm-user-info)))
+    (setf *rtm-user-info*                      result
+	  (get-id             *rtm-user-info*) (cdr (assoc :id       rtm:*rtm-api-user*))
+	  (get-username       *rtm-user-info*) (cdr (assoc :username rtm:*rtm-api-user*))
+	  (get-fullname       *rtm-user-info*) (cdr (assoc :fullname rtm:*rtm-api-user*))
+	  (get-contacts       *rtm-user-info*) (list-contacts)
+	  (get-contact-groups *rtm-user-info*) (list-contact-groups)
+	  (get-locations      *rtm-user-info*) (list-locations)
+	  (get-task-lists     *rtm-user-info*) (rtm-list-task-lists))
+    (rtm-refresh-all-lists)
+    result))
+
+
+;;; Tests:
+;; (rtm-list-task-lists)
+
+;; (rtm-add-note-to-task (nth 0 (rtm-list-tasks-on-list (nth 0 (get-task-lists *rtm-user-info*)))
+;; 	      "aaa" "eeee")
+
+;; (rtm-delete-note (nth 0 (get-notes (nth 0 (rtm-list-tasks-on-list (nth 4 (get-task-lists *rtm-user-info*)))))))
+
+;; (rtm-edit-note (nth 0 (get-notes (nth 0 (rtm-list-tasks-on-list (nth 4 (get-task-lists *rtm-user-info*))))))
+;; 	       "yadda" "weeee!")
+
+;;(init-rtm)
