@@ -5,7 +5,7 @@
 
 (defun from-rtm-type (type value)
   (case type
-    (bool (or (string= "0" value) value))
+    (bool (string= "1" value))
     (t value)))
 
 (defun to-rtm-type (type value)
@@ -18,6 +18,28 @@
 
 (defun find-by-id (id-string bucket)
   (find-by-criteria id-string #'get-id bucket))
+
+(defun cdrassoc (key alist)
+  (cdr (assoc key alist)))
+
+(defun chain (fn 1stargs finalarg)
+  ;; usefull for the following example:
+  ;; (cdrassoc :rrule
+  ;; 	  (cdrassoc :taskseries
+  ;; 		    (cdrassoc :list
+  ;; 			      '((:list . ((:taskseries . ((:rrule . "ola")))))))))
+  ;; (chain #'cdrassoc '(:rrule :taskseries :list) '((:list . ((:taskseries . ((:rrule . "ola")))))))
+  (if 1stargs
+      (funcall fn (first 1stargs) (chain fn (rest 1stargs) finalarg))
+      finalarg))
+
+(defmacro cdrassocchain (keylist alist)
+  `(chain #'(lambda (x y) (cdr (assoc x y))) ,keylist ,alist))
+
+;; (cdrassocchain '(:rrule :taskseries :list) '((:list . ((:taskseries . ((:rrule . "ola")))))))
+
+
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Object model for the RTM entities
@@ -40,10 +62,6 @@
 (defclass rtm-object ()
   ((dirty :accessor is-dirty :initarg :dirty :initform nil)))
 
-;; (defmethod shared-initialize :after ((instance rtm-object) slot-names &key &allow-other-keys)
-;;   (declare (ignore initargs slot-names))
-;;   (setf (is-dirty instance) nil))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Contacts
 (defclass contact (rtm-object)
@@ -60,9 +78,9 @@
   (let* ((alist (rtm:rtm-api-contacts-add username-or-email))
 	 (new-contact 
 	  (make-instance 'contact
-			 :id (cdr (assoc :id alist))
-			 :username (cdr (assoc :username alist))
-			 :fullname (cdr (assoc :fullname alist)))))
+			 :id (cdrassoc :id alist)
+			 :username (cdrassoc :username alist)
+			 :fullname (cdrassoc :fullname alist))))
     (pushnew new-contact
 	     (get-contacts *rtm-user-info*)
 	     :key #'get-id
@@ -73,9 +91,9 @@
   (let ((contacts (mapcar
 		   #'(lambda (c)
 		       (make-instance 'contact
-				      :username   (cdr (assoc :username c))
-				      :fullname   (cdr (assoc :fullname c))
-				      :id (cdr (assoc :id c))))
+				      :username   (cdrassoc :username c)
+				      :fullname   (cdrassoc :fullname c)
+				      :id (cdrassoc :id c)))
 		   (rtm:rtm-api-contacts-get-list))))
     (setf (get-contacts *rtm-user-info*)
 	  contacts)))
@@ -96,8 +114,8 @@
   (let* ((alist (rtm:rtm-api-groups-add name))
 	 (new-group
 	  (make-instance 'contact-group
-			 :id       (cdr (assoc :id alist))
-			 :name     (cdr (assoc :name alist)))))
+			 :id       (cdrassoc :id alist)
+			 :name     (cdrassoc :name alist))))
     (pushnew new-group
 	     (get-contact-groups *rtm-user-info*)
 	     :key #'get-id
@@ -121,13 +139,13 @@
 	 (mapcar
 	  #'(lambda (g)
 	      (make-instance 'contact-group
-			     :id       (cdr (assoc :id g))
-			     :name     (cdr (assoc :name g))
+			     :id       (cdrassoc :id g)
+			     :name     (cdrassoc :name g)
 			     :contacts (mapcar
 					#'(lambda (c-alist)
-					    (find-by-id (cdr (assoc :id (cdr c-alist)))
+					    (find-by-id (cdrassoc :id (cdr c-alist))
 							(get-contacts *rtm-user-info*)))
-					(cdr (assoc :contacts g)))))
+					(cdrassoc :contacts g))))
 	  (rtm:rtm-api-groups-get-list))))
     (setf (get-contact-groups *rtm-user-info*) groups)))
 
@@ -151,13 +169,13 @@
   (let* ((alist (rtm:rtm-api-lists-add name (or filter "")))
 	 (new-list
 	  (make-instance 'task-list
-			 :id       (cdr (assoc :id alist))
-			 :name     (cdr (assoc :name alist))
-			 :smart    (from-rtm-type 'bool (cdr (assoc :smart    alist)))
-			 :deleted  (from-rtm-type 'bool (cdr (assoc :deleted  alist)))
-			 :locked   (from-rtm-type 'bool (cdr (assoc :locked   alist)))
-			 :position (from-rtm-type 'bool (cdr (assoc :position alist)))
-			 :archived (from-rtm-type 'bool (cdr (assoc :archived alist))))))
+			 :id       (cdrassoc :id alist)
+			 :name     (cdrassoc :name alist)
+			 :smart    (from-rtm-type 'bool (cdrassoc :smart    alist))
+			 :deleted  (from-rtm-type 'bool (cdrassoc :deleted  alist))
+			 :locked   (from-rtm-type 'bool (cdrassoc :locked   alist))
+			 :position (from-rtm-type 'bool (cdrassoc :position alist))
+			 :archived (from-rtm-type 'bool (cdrassoc :archived alist)))))
     (pushnew new-list
 	     (get-task-lists *rtm-user-info*)
 	     :key #'get-id
@@ -171,7 +189,8 @@
   (let ((x (delete-if (lambda (x) (string= (get-id x) (get-id tl)))
 		      (get-task-lists *rtm-user-info*))))
     (declare (ignore x))
-    (rtm-refresh-all-lists)))
+    ;; (rtm-refresh-all-lists)
+    ))
 
 (defmethod rtm-archive-task-list ((tl task-list))
   (rtm:rtm-api-lists-archive (get-id tl))
@@ -187,23 +206,26 @@
 (defmethod rtm-change-task-list-name ((tl task-list) name)
   (rtm:rtm-api-lists-set-name (get-id tl) name)
   (setf (get-name tl) name)
-  (rtm-refresh-all-lists))
+  ;; (rtm-refresh-all-lists)
+  )
 
 (defun rtm-list-task-lists ()
+  (declare (special *rtm-user-info*))
   (let ((task-lists
 	 (mapcar (lambda (l)
 		   (make-instance 'task-list
-				  :name       (cdr (assoc :name l))
-				  :id         (cdr (assoc :id l))
-				  :position   (cdr (assoc :position l))
-				  :sort-order (cdr (assoc :sort_order l))
-				  :archived   (from-rtm-type 'bool (cdr (assoc :archived l)))
-				  :smart      (from-rtm-type 'bool (cdr (assoc :smart l)))
-				  :locked     (from-rtm-type 'bool (cdr (assoc :locked l)))
-				  :deleted    (from-rtm-type 'bool (cdr (assoc :deleted l)))
+				  :name       (cdrassoc :name l)
+				  :id         (cdrassoc :id l)
+				  :position   (cdrassoc :position l)
+				  :sort-order (cdrassoc :sort_order l)
+				  :archived   (from-rtm-type 'bool (cdrassoc :archived l))
+				  :smart      (from-rtm-type 'bool (cdrassoc :smart l))
+				  :locked     (from-rtm-type 'bool (cdrassoc :locked l))
+				  :deleted    (from-rtm-type 'bool (cdrassoc :deleted l))
 				  :tasks      nil))
 		 (rtm:rtm-api-lists-get-list))))
-    (setf (get-task-lists *rtm-user-info*) task-lists)))
+    (setf (get-task-lists *rtm-user-info*) task-lists)
+    task-lists))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Locations
@@ -221,13 +243,13 @@
 	 (mapcar
 	  #'(lambda (l)
 	      (make-instance 'location
-			     :id        (cdr (assoc :id l))
-			     :name      (cdr (assoc :name l))
-			     :longitude (cdr (assoc :longitude l))
-			     :latitude  (cdr (assoc :latitude l))
-			     :zoom      (cdr (assoc :zoom l))
-			     :address   (cdr (assoc :address l))
-			     :viewable  (from-rtm-type 'bool (cdr (assoc :viewable l)))))
+			     :id        (cdrassoc :id l)
+			     :name      (cdrassoc :name l)
+			     :longitude (cdrassoc :longitude l)
+			     :latitude  (cdrassoc :latitude l)
+			     :zoom      (cdrassoc :zoom l)
+			     :address   (cdrassoc :address l)
+			     :viewable  (from-rtm-type 'bool (cdrassoc :viewable l))))
 	  (rtm:rtm-api-locations-get-list))))
     (setf (get-locations *rtm-user-info*) locations)))
 
@@ -239,7 +261,7 @@
 (defclass task (rtm-object)
   ((list-id       :accessor get-list-id       :initarg :list-id)
    (taskseries-id :accessor get-taskseries-id :initarg :taskseries-id)
-   (task-id       :accessor get-task-id       :initarg :task-id)
+   (task-id       :accessor get-id            :initarg :task-id)
    (created       :accessor get-created       :initarg :created)
    (modified      :accessor get-modified      :initarg :modified)
    (name          :accessor get-name          :initarg :name)
@@ -259,294 +281,301 @@
    (postponed     :accessor get-postponed     :initarg :postponed)
    (estimate      :accessor get-estimate      :initarg :estimate)))
 
+(defmethod get-location ((task task))
+  (find-by-id (get-location-id task) (get-locations *rtm-user-info*)))
+
+(defmethod get-list ((task task))
+  (find-by-id (get-list-id task) (get-task-lists *rtm-user-info*)))
+
 (defun rtm-list-tasks-on-list (wanted-list &key filter last-sync)
-  (apply
-   #'append
-   (mapcar
-    #'(lambda (list)
-	(mapcan
-	 #'(lambda (taskseries)
-	     (when (cdr (assoc :task taskseries)) ;; Make sure we have no empty taskseries, useless to us...
-	     (list (let* ((task (cdr (assoc :task taskseries)))
-		    (participants
-		     (mapcar #'(lambda (c)
-				 (let ((c (cdr c)))
-				   (make-instance 'contact
-						  :id       (cdr (assoc :id c))
-						  :username (cdr (assoc :username c))
-						  :fullname (cdr (assoc :fullname c)))))
-			     (cdr (assoc :participants taskseries))))
-		    (notes
-		     (mapcar #'(lambda (n)
-				 (let ((n (cdr n)))
-				   (make-instance 'note
-						  :id       (cdr (assoc :id n))
-						  :created  (cdr (assoc :created n))
-						  :modified (cdr (assoc :modified n))
-						  :title    (cdr (assoc :title n))
-						  :contents (cdr (assoc :$t n)))))
-			     (cdr (assoc :notes taskseries))))
-		    (tags
-		     (mapcar #'(lambda (tag)
-				 (cdr tag))
-			     (cdr (assoc :tags taskseries))))
-		    (recurrence
-		     (let ((rrule (cdr (assoc :rrule taskseries))))
-		       `((:every . ,(when (from-rtm-type 'bool
-							 (cdr (assoc :every rrule)))
-					  (cdr (assoc :$t rrule))))
-			 (:after . ,(when (from-rtm-type 'bool
-							 (cdr (assoc :after rrule)))
-					  (cdr (assoc :$t rrule)))))))
-		    (new-task
-		     (make-instance 'task
-				    :list-id       (cdr (assoc :id list))
-				    :taskseries-id (cdr (assoc :id taskseries))
-				    :task-id       (cdr (assoc :id task))
-				    :created       (cdr (assoc :created taskseries))
-				    :modified      (cdr (assoc :modified taskseries))
-				    :name          (cdr (assoc :name taskseries))
-				    :source        (cdr (assoc :source taskseries))
-				    :url           (cdr (assoc :url taskseries))
-				    :location-id   (cdr (assoc :location-id taskseries))
-				    :tags          tags
-				    :recurrence    recurrence
-				    :participants  participants
-				    :notes         notes
-				    :due           (cdr (assoc :due task))
-				    :has-due-time  (from-rtm-type
-						    'bool
-						    (cdr (assoc :has_due_time task)))
-				    :added         (cdr (assoc :added task))
-				    :completed     (cdr (assoc :completed task))
-				    :deleted       (cdr (assoc :deleted task))
-				    :priority      (cdr (assoc :priority task))
-				    :postponed     (from-rtm-type 'bool
-								  (cdr (assoc :postponed task)))
-				    :estimate      (cdr (assoc :estimate task)))))
-	       (mapcar #'(lambda (n) (setf (get-task n) new-task)) (get-notes new-task))
-	       new-task))))
-	 (let ((taskseries (cdr (assoc :taskseries list))))
-	   (if (atom (caar taskseries))
-	       (list taskseries)
-	       taskseries))))
-    (rtm:rtm-api-tasks-get-list (get-id wanted-list)
-				:filter filter
-				:last-sync last-sync))))
+  (reverse
+   (apply
+    #'append
+    (mapcar
+     #'(lambda (list)
+	 (mapcan
+	  #'(lambda (taskseries)
+	      (when (cdrassoc :task taskseries) ;; Make sure we have no empty taskseries, useless to us...
+		(list (let* ((task (cdrassoc :task taskseries))
+			     (participants
+			      (mapcar #'(lambda (c)
+					  (let ((c (cdr c)))
+					    (make-instance 'contact
+							   :id       (cdrassoc :id c)
+							   :username (cdrassoc :username c)
+							   :fullname (cdrassoc :fullname c))))
+				      (cdrassoc :participants taskseries)))
+			     (notes (mapcar #'(lambda (n)
+						(let ((n (cdr n)))
+						  (make-instance 'note
+								 :id       (cdrassoc :id n)
+								 :created  (cdrassoc :created n)
+								 :modified (cdrassoc :modified n)
+								 :title    (cdrassoc :title n)
+								 :contents (cdrassoc :$t n))))
+					    (cdrassoc :notes taskseries)))
+			     (tags (mapcar #'(lambda (tag) (cdr tag))
+					   (cdrassoc :tags taskseries)))
+			     (recurrence (let ((rrule (cdrassoc :rrule taskseries)))
+					   `((:every . ,(when (from-rtm-type 'bool
+									     (cdrassoc :every rrule))
+							      (cdrassoc :$t rrule)))
+					     (:after . ,(when (from-rtm-type 'bool
+									     (cdrassoc :after rrule))
+							      (cdrassoc :$t rrule))))))
+			     (new-task
+			      (make-instance 'task
+					     :list-id       (cdrassoc :id list)
+					     :taskseries-id (cdrassoc :id taskseries)
+					     :task-id       (cdrassoc :id task)
+					     :created       (cdrassoc :created taskseries)
+					     :modified      (cdrassoc :modified taskseries)
+					     :name          (cdrassoc :name taskseries)
+					     :source        (cdrassoc :source taskseries)
+					     :url           (cdrassoc :url taskseries)
+					     :location-id   (cdrassoc :location-id taskseries)
+					     :tags          tags
+					     :recurrence    recurrence
+					     :participants  participants
+					     :notes         notes
+					     :due           (cdrassoc :due task)
+					     :has-due-time  (from-rtm-type 'bool (cdrassoc :has_due_time task))
+					     :added         (cdrassoc :added task)
+					     :completed     (cdrassoc :completed task)
+					     :deleted       (cdrassoc :deleted task)
+					     :priority      (cdrassoc :priority task)
+					     :postponed     (from-rtm-type 'bool (cdrassoc :postponed task))
+					     :estimate      (cdrassoc :estimate task))))
+			(mapcar #'(lambda (n) (setf (get-task n) new-task)) (get-notes new-task))
+			new-task))))
+	  (let ((taskseries (cdrassoc :taskseries list)))
+	    (if (atom (caar taskseries))
+		(list taskseries)
+		taskseries))))
+     (rtm:rtm-api-tasks-get-list (get-id wanted-list)
+				 :filter filter
+				 :last-sync last-sync)))))
 
 (defun rtm-refresh-all-lists ()
-  (dolist (l (reverse (get-task-lists *rtm-user-info*)))
-    ;;(format t "RTM refreshing list ~a...~%" (get-name l))
-    (setf (get-tasks l) (rtm-list-tasks-on-list l))))
+  (dolist (l (get-task-lists *rtm-user-info*))
+    (rtm-refresh-list l)))
+
+(defmethod rtm-refresh-list ((list task-list))
+  (setf (get-tasks list) (rtm-list-tasks-on-list list)))
+
+(defmethod rtm-refresh-list ((list-id simple-base-string))
+  (rtm-refresh-list (find-by-id list-id (get-task-lists *rtm-user-info*))))
+
 
 ;;(rtm-refresh-all-lists)
 
-(defmethod rtm-add-task ((list list) name &optional (parse-date-in-name-p nil))
-  (let* ((alist (cdr (assoc :list
-			    (rtm:rtm-api-tasks-add (get-id list) name parse-date-in-name-p))))
-	 (taskseries (cdr (assoc :taskseries alist)))
-	 (task (cdr (assoc :task taskseries)))
-	 (new-task (make-instance 'task
-				  :list-id       (cdr (assoc :id alist))
-				  :taskseries-id (cdr (assoc :id taskseries))
-				  :task-id       (cdr (assoc :id task))
-				  :created       (cdr (assoc :created taskseries))
-				  :modified      (cdr (assoc :modified taskseries))
-				  :name          (cdr (assoc :name taskseries))
-				  :source        (cdr (assoc :source taskseries))
-				  :url           (cdr (assoc :url taskseries))
-				  :location-id   (cdr (assoc :location-id taskseries))
-				  :due           (cdr (assoc :due task))
-				  :has-due-time  (from-rtm-type 'bool
-								(cdr (assoc :has_due_time task)))
-				  :added         (cdr (assoc :added task))
-				  :completed     (cdr (assoc :completed task))
-				  :deleted       (cdr (assoc :deleted task))
-				  :priority      (cdr (assoc :priority task))
-				  :postponed     (from-rtm-type 'bool
-								(cdr (assoc :postponed task)))
-				  :estimate      (cdr (assoc :estimate task)))))
+(defmethod rtm-add-task ((list task-list) name &optional (parse-date-in-name-p nil))
+  (let* ((alist (cdrassoc :list (rtm:rtm-api-tasks-add (get-id list) name (to-rtm-type 'bool parse-date-in-name-p))))
+	 (taskseries (cdrassoc :taskseries alist))
+	 (task (cdrassoc :task taskseries))
+	 (task-id (cdrassoc :id task)))
     ;; To reflect smartlists, one should recalculate all lists again:
-    (rtm-refresh-all-lists)
-    (find-by-id (get-id new-task) (get-tasks list))))
+    (rtm-refresh-list list)
+    (find-by-id task-id (get-tasks list))))
 
-(defmethod rtm-add-tags ((task task) tags)
-  (rtm:rtm-api-tasks-add-tags (get-list-id task)
-			      (get-taskseries-id task)
-			      (get-task-id task)
-			      tags)
-  (setf (get-tags task)
-	(append (get-tags task) tags)))
+(defmethod rtm-add-tags ((task task) (tags list))
+  (let ((new-tags (set-difference tags (get-tags task) :test #'string=)))
+    (rtm:rtm-api-tasks-add-tags (get-list-id task)
+				(get-taskseries-id task)
+				(get-id task)
+				new-tags)
+    (setf (get-tags task)
+	  (append (get-tags task) new-tags))))
 
-(defmethod rtm-remove-tags ((task task) tags)
-  (rtm:rtm-api-tasks-remove-tags (get-list-id task)
-				 (get-taskseries-id task)
-				 (get-task-id task)
-				 tags)
-  (setf (get-tags task)
-	(set-difference (get-tags task) tags)))
+(defmethod rtm-remove-tags ((task task) (tags list))
+  (unless (intersection tags (get-tags task) :test #'string=)
+    (rtm:rtm-api-tasks-remove-tags (get-list-id task)
+				   (get-taskseries-id task)
+				   (get-id task)
+				   tags)
+    (setf (get-tags task)
+	  (set-difference (get-tags task) tags))))
 
-(defmethod rtm-change-task-tags ((task task) tags)
-  (rtm:rtm-api-tasks-set-tags (get-list-id task)
-			      (get-taskseries-id task)
-			      (get-task-id task)
-			      tags)
-  (setf (get-tags task)
-	tags)
-  task)
+(defmethod rtm-change-task-tags ((task task) (tags list))
+  (let* ((task-tags (get-tags task))
+	 (task-tags-cdr (cdr task-tags))
+	 (desired-task-tags (if (stringp task-tags-cdr) task-tags task-tags-cdr)))
+  (unless (equal tags desired-task-tags)
+    (rtm:rtm-api-tasks-set-tags (get-list-id task)
+				(get-taskseries-id task)
+				(get-id task)
+				tags)
+    (setf (get-tags task) (list tags))
+    task)))
+
+
+(defmethod rtm-change-task-tags ((task task) (tags simple-base-string))
+  (let ((strings (split-tokens tags)))
+    (rtm-change-task-tags task strings)))
+
 
 
 (defmethod rtm-complete-task ((task task))
-  (let ((result
-	 (rtm:rtm-api-tasks-complete (get-list-id task)
-				     (get-taskseries-id task)
-				     (get-task-id task))))
-    (setf (get-completed task)
-	(cdr (assoc :completed
-		    (cdr (assoc :task
-				(cdr (assoc :taskseries
-					    (cdr (assoc :list result)))))))))
-    task))
+  (when (string= "" (get-completed task)) ;; else it's already completed.
+    (let ((result
+	   (rtm:rtm-api-tasks-complete (get-list-id task)
+				       (get-taskseries-id task)
+				       (get-id task))))
+      (setf (get-completed task)
+	    (cdrassocchain '(:completed :task :taskseries :list) result))))
+  task)
 
 (defmethod rtm-uncomplete-task ((task task))
-  (rtm:rtm-api-tasks-uncomplete (get-list-id task)
-				(get-taskseries-id task)
-				(get-task-id task))
-  (setf (get-completed task) nil)
+  (unless (string= "" (get-completed task)) ;; it's completed
+    (rtm:rtm-api-tasks-uncomplete (get-list-id task)
+				  (get-taskseries-id task)
+				  (get-id task))
+    (setf (get-completed task) nil))
   task)
 
 
 (defmethod rtm-delete-task ((task task))
-  (let ((result
-	 (rtm:rtm-api-tasks-delete (get-list-id task)
-				     (get-taskseries-id task)
-				     (get-task-id task))))
+  (let* ((list-id (get-list-id task))
+	 (result
+	  (rtm:rtm-api-tasks-delete list-id
+				    (get-taskseries-id task)
+				    (get-id task))))
     (setf (get-deleted task)
-	(cdr (assoc :deleted
-		    (cdr (assoc :task
-				(cdr (assoc :taskseries
-					    (cdr (assoc :list result)))))))))
+	  (cdrassocchain '(:deleted :task :taskseries :list) result))
+    (rtm-refresh-list list-id)
     task))
 
-(defmethod rtm-change-task-priority ((task task) move-up-p)
+(defmethod rtm-move-task-priority ((task task) move-up-p)
   (let ((result
 	 (rtm:rtm-api-tasks-move-priority (get-list-id task)
 					  (get-taskseries-id task)
-					  (get-task-id task)
+					  (get-id task)
 					  (if move-up-p "up" "down"))))
     (setf (get-priority task)
-	(cdr (assoc :priority
-		    (cdr (assoc :task
-				(cdr (assoc :taskseries
-					    (cdr (assoc :list result)))))))))))
+	  (cdrassocchain '(:priority :task :taskseries :list) result))))
 
-(defmethod rtm-move-task-to-list ((task task) (list list))
-  (rtm:rtm-api-tasks-move-to (get-list-id task)
-			     (get-id list)
-			     (get-taskseries-id task)
-			     (get-task-id task))
-  (let ((old-list (find-by-id (get-list-id task)
-			      (get-task-lists *rtm-user-info*))))
-    (setf (get-list-id task) (get-id list))
-    (setf (get-tasks old-list)
-	  (delete-if (lambda (x) (string= (get-id x) (get-id task)))
-		     (get-tasks old-list)))
-    (pushnew task (get-tasks list) :key #'get-id :test #'string=)))
+(defmethod rtm-move-task-to-list ((task task) (list task-list))
+  (unless (equal (get-id list) (get-list-id task))
+    (rtm:rtm-api-tasks-move-to (get-list-id task)
+			       (get-id list)
+			       (get-taskseries-id task)
+			       (get-id task))
+    (let ((old-list (find-by-id (get-list-id task)
+				(get-task-lists *rtm-user-info*))))
+      (setf (get-list-id task) (get-id list))
+      (setf (get-tasks old-list)
+	    (delete-if (lambda (x) (string= (get-id x) (get-id task)))
+		       (get-tasks old-list)))
+      (pushnew task (get-tasks list) :key #'get-id :test #'string=))))
 
 (defmethod rtm-postpone-task ((task task))
   (let ((result
 	 (rtm:rtm-api-tasks-postpone (get-list-id task)
 				     (get-taskseries-id task)
-				     (get-task-id task))))
+				     (get-id task))))
     (setf (get-postponed task) t)
     (setf (get-due task)
-	(cdr (assoc :due
-		    (cdr (assoc :task
-				(cdr (assoc :taskseries
-					    (cdr (assoc :list result)))))))))
+	  (cdrassocchain '(:due :task :taskseries :list) result))
     task))
 
-(defmethod rtm-change-task-due-date ((task task) due-date &optional has-due-time-p parse-p)
+(defmethod rtm-change-task-due-date ((task task) due-date &key (has-due-time-p t) parse-p)
   (let ((result
 	 (rtm:rtm-api-tasks-set-due-date (get-list-id task)
 					 (get-taskseries-id task)
-					 (get-task-id task)
+					 (get-id task)
 					 due-date
 					 (to-rtm-type 'bool has-due-time-p)
 					 (to-rtm-type 'bool parse-p))))
     (setf (get-due task)
-	(cdr (assoc :due
-		    (cdr (assoc :task
-				(cdr (assoc :taskseries
-					    (cdr (assoc :list result)))))))))
+	  (cdrassocchain '(:due :task :taskseries :list) result))
     (setf (has-due-time task)
 	  has-due-time-p)
     task))
 
 (defmethod rtm-change-task-estimate ((task task) estimate)
-  (let ((result
-	 (rtm:rtm-api-tasks-set-estimate (get-list-id task)
-					 (get-taskseries-id task)
-					 (get-task-id task)
-					 estimate)))
-    (setf (get-estimate task)
-	(cdr (assoc :estimate
-		    (cdr (assoc :task
-				(cdr (assoc :taskseries
-					    (cdr (assoc :list result)))))))))
-    task))
-
-(defmethod rtm-change-task-location ((task task) (location location))
-  (rtm:rtm-api-tasks-set-location (get-list-id task)
-				  (get-taskseries-id task)
-				  (get-task-id task)
-				  (get-id location))
-  (setf (get-location-id task)
-	(get-id location))
+  (unless (equal estimate (get-estimate task))
+    (let ((result
+	   (rtm:rtm-api-tasks-set-estimate (get-list-id task)
+					   (get-taskseries-id task)
+					   (get-id task)
+					   estimate)))
+      (setf (get-estimate task)
+	    (cdrassocchain '(:estimate :task :taskseries :list) result))))
   task)
 
+(defmethod rtm-change-task-location ((task task) (location location))
+  (unless (equal (get-location-id task) (get-id location))
+    (rtm:rtm-api-tasks-set-location (get-list-id task)
+				    (get-taskseries-id task)
+				    (get-id task)
+				    (get-id location))
+    (setf (get-location-id task)
+	  (get-id location)))
+  task)
+
+(defmethod rtm-change-task-location ((task task) (location list))
+  (unless (or location (equal (get-location-id task) ""))
+    (rtm:rtm-api-tasks-set-location (get-list-id task)
+				    (get-taskseries-id task)
+				    (get-id task)
+				    "")
+    (setf (get-location-id task) ""))
+  task)
+
+(defmethod rtm-change-task-location ((task task) (location-name simple-base-string))
+  ;; if the location name string exists, use its location obj. else, create it first
+  (let ((location (find-by-criteria location-name #'get-name (get-locations *rtm-user-info*))))
+    (if (and location (not (equal (get-id location) (get-location-id task))))
+	(rtm-change-task-location task location)
+	;; (format t "Location ~s does not exist on your RTM.~%" location-name)
+	)
+    task))
+
+
+
 (defmethod rtm-change-task-name ((task task) name)
-  (rtm:rtm-api-tasks-set-name (get-list-id task)
-			      (get-taskseries-id task)
-			      (get-task-id task)
-			      name)
-  (setf (get-name task)
-	name)
+  (unless (string= (get-name task) name)
+    (rtm:rtm-api-tasks-set-name (get-list-id task)
+				(get-taskseries-id task)
+				(get-id task)
+				name)
+    (setf (get-name task)
+	  name))
   task)
 
 (defmethod rtm-change-task-priority ((task task) priority)
-  (rtm:rtm-api-tasks-set-priority (get-list-id task)
-				  (get-taskseries-id task)
-				  (get-task-id task)
-				  priority)
-  (setf (get-priority task)
-	priority)
+  (unless (equal priority (get-priority task))
+    (rtm:rtm-api-tasks-set-priority (get-list-id task)
+				    (get-taskseries-id task)
+				    (get-id task)
+				    priority)
+    (setf (get-priority task)
+	  priority))
   task)
 
 (defmethod rtm-change-task-recurrence ((task task) recurrence)
   (let* ((result (rtm:rtm-api-tasks-set-recurrence (get-list-id task)
 						  (get-taskseries-id task)
-						  (get-task-id task)
+						  (get-id task)
 						  recurrence))
-	 (rrule (cdr (assoc :rrule
-			    (cdr (assoc :taskseries
-					(cdr (assoc :list result))))))))
+	 (rrule (cdrassocchain '(:rrule :taskseries :list) result)))
     (setf (get-recurrence task)
 	  `((:every . ,(when (from-rtm-type 'bool
-					    (cdr (assoc :every rrule)))
-			     (cdr (assoc :$t rrule))))
+					    (cdrassoc :every rrule))
+			     (cdrassoc :$t rrule)))
 	    (:after . ,(when (from-rtm-type 'bool
-					    (cdr (assoc :after rrule)))
-			     (cdr (assoc :$t rrule)))))))
+					    (cdrassoc :after rrule))
+			     (cdrassoc :$t rrule))))))
   task)
 
 (defmethod rtm-change-task-url ((task task) url)
-  (rtm:rtm-api-tasks-set-url (get-list-id task)
-			     (get-taskseries-id task)
-			     (get-task-id task)
-			     url)
-  (setf (get-url task)
-	url)
+  (unless (equal url (get-url task))
+    (rtm:rtm-api-tasks-set-url (get-list-id task)
+			       (get-taskseries-id task)
+			       (get-id task)
+			       url)
+    (setf (get-url task)
+	  url))
   task)
 
 
@@ -567,16 +596,16 @@
   (let ((alist (rtm:rtm-api-tasks-notes-add
 		 (get-list-id task)
 		 (get-taskseries-id task)
-		 (get-task-id task)
+		 (get-id task)
 		 title
 		 text)))
     (let ((new-note (make-instance 'note
-				   :id (cdr (assoc :id alist))
-				   :created (cdr (assoc :created alist))
-				   :modified (cdr (assoc :modified alist))
+				   :id (cdrassoc :id alist)
+				   :created (cdrassoc :created alist)
+				   :modified (cdrassoc :modified alist)
 				   :task task
-				   :title (cdr (assoc :title alist))
-				   :contents (cdr (assoc :$T alist)))))
+				   :title (cdrassoc :title alist)
+				   :contents (cdrassoc :$T alist))))
     (pushnew new-note (get-notes task) :key #'get-id :test #'string=)
     new-note)))
 
@@ -593,7 +622,7 @@
     (format t "~s~%" alist)    
     (setf (get-title    n) new-title
 	  (get-contents n) new-text
-	  (get-modified n) (cdr (assoc :modified alist)))
+	  (get-modified n) (cdrassoc :modified alist))
     n))
 
 
@@ -606,9 +635,9 @@
   "Assumes we already got a token or checked the current one."
   (let ((result (make-instance 'rtm-user-info)))
     (setf *rtm-user-info*                      result
-	  (get-id             *rtm-user-info*) (cdr (assoc :id       rtm:*rtm-api-user*))
-	  (get-username       *rtm-user-info*) (cdr (assoc :username rtm:*rtm-api-user*))
-	  (get-fullname       *rtm-user-info*) (cdr (assoc :fullname rtm:*rtm-api-user*))
+	  (get-id             *rtm-user-info*) (cdrassoc :id       rtm:*rtm-api-user*)
+	  (get-username       *rtm-user-info*) (cdrassoc :username rtm:*rtm-api-user*)
+	  (get-fullname       *rtm-user-info*) (cdrassoc :fullname rtm:*rtm-api-user*)
 	  (get-contacts       *rtm-user-info*) (list-contacts)
 	  (get-contact-groups *rtm-user-info*) (list-contact-groups)
 	  (get-locations      *rtm-user-info*) (list-locations)

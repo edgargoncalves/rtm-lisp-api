@@ -121,7 +121,7 @@ Can't be redone."
   (format stream "RTM returned error with code ~a: ~a" (get-code c) (get-message c)))
 
 (defun rtm-api-call-method (method &optional key-value-pairs &key with-timeline with-authentication (format "json"))
-  "Calls `METHOD'.
+  "Calls `METHOD', using drakma.
  - Optionally passes pairs of strings in `KEY-VALUE-PAIRS' in the form
 of (`PARAMETER' . `VALUE').
  - Keyword `WITH-TIMELINE', if not null, allows the method to be called within
