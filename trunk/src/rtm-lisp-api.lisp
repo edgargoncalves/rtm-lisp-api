@@ -496,10 +496,6 @@ specifies the server reply format."
 		       :with-authentication t
 		       :with-timeline t))
 
-
-`(("a" . 1) ,@(when nil '(3)) ("c" . 4))
-
-
 ;;;rtm.tasks.setEstimate
 (defun rtm-api-tasks-set-estimate (list-id taskseries-id task-id &optional (estimate ""))
   (rtm-api-call-method "rtm.tasks.setEstimate"
