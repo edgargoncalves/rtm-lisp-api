@@ -489,11 +489,16 @@ specifies the server reply format."
 		       `(("list_id"       . ,list-id)
 			 ("taskseries_id" . ,taskseries-id)
 			 ("task_id"       . ,task-id)
-			 ("due"           . ,due)
+			 ,@(when (string= "" due)
+				 `(("due"   . ,due)))
 			 ("has_due_time"  . ,has-due-time)
 			 ("parse"         . ,parse))
 		       :with-authentication t
 		       :with-timeline t))
+
+
+`(("a" . 1) ,@(when nil '(3)) ("c" . 4))
+
 
 ;;;rtm.tasks.setEstimate
 (defun rtm-api-tasks-set-estimate (list-id taskseries-id task-id &optional (estimate ""))
