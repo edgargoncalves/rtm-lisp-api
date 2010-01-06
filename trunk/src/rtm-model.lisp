@@ -494,7 +494,6 @@
 ;; for now, a remote update is required.
 
 (defmethod rtm-add-task ((list task-list) name &optional (parse-date-in-name-p nil))
-  (format t "---> adding a task..~%")
   (let ((temp-id (make-offline-id "task")))
     (make-offline-task
      ;;remote task
