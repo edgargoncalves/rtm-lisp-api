@@ -19,8 +19,6 @@
     (bool (string= "1" value))
     (t value)))
 
-;; TODO: add a case for dates. make an empty date be nil, and a full date be a lisp date.
-
 (defun to-rtm-type (type value)
   (case type
     (bool (if value "1" "0"))
@@ -481,9 +479,10 @@
 				 :filter filter
 				 :last-sync last-sync)))))
 
-(defun rtm-refresh-all-lists ()
+(defun rtm-refresh-all-lists (&key smart-only)
   (dolist (l (get-task-lists *rtm-user-info*))
-    (rtm-refresh-list l)))
+    (unless (and smart-only (not (is-smart l))) 
+      (rtm-refresh-list l))))
 
 (defmethod rtm-refresh-list ((list task-list))
   (setf (get-tasks list) (rtm-list-tasks-on-list list)))
@@ -512,7 +511,7 @@
 	       (get-taskseries-id offline-task) (cdrassoc :id taskseries)))
        
        ;; To reflect smartlists, one should recalculate all lists again:
-       (rtm-refresh-all-lists)) ;; TODO - fix this method to refresh smart ones only 
+       (rtm-refresh-all-lists :smart-only t))
      
      
      ;;local task
@@ -603,7 +602,9 @@
 				     (get-id task))))
      (setf (get-deleted task)
 	   (cdrassocchain '(:deleted :task :taskseries :list) result))
-     (rtm-refresh-list list-id))
+     (rtm-refresh-list list-id)
+     ;; To reflect smartlists, one should recalculate all lists again:
+     (rtm-refresh-all-lists :smart-only t))
    
    (awhen (find-by-id (get-list-id task)
 		      (get-task-lists *rtm-user-info*))
@@ -677,7 +678,6 @@
 					    (to-rtm-type 'bool has-due-time-p)
 					    (to-rtm-type 'bool parse-p))))
        ;; update to reflect parsed date/times:
-       (format t "set date to ~s/~s, received: ~s~%" due-date has-due-time-p result)
        (setf (get-due task) 
 	     (cdrassocchain '(:due :task :taskseries :list) result)))
      (progn
@@ -695,7 +695,7 @@
        (setf (get-estimate task)
 	     (cdrassocchain '(:estimate :task :taskseries :list) result)))
      
-     (setf (get-estimate task) estimate)))) ;;TODO: change this to a local time, such as "2006-05-07T10:26:21Z"
+     (setf (get-estimate task) estimate))))
 
 (defmethod rtm-change-task-location ((task task) (location list))
   (when (null location)
@@ -801,8 +801,8 @@
      (let ((offline-note
 	    (make-instance 'note
 			   :id temp-id
-			   :created (get-current-time-string) ;;TODO: change this to a local time, such as "2006-05-07T10:26:21Z"
-			   :modified (get-current-time-string) ;;TODO: change this to a local time, such as "2006-05-07T10:26:21Z"
+			   :created (get-current-time-string) 
+			   :modified (get-current-time-string)
 			   :task task
 			   :title title
 			   :contents text)))
