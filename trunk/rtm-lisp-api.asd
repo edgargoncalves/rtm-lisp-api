@@ -31,14 +31,17 @@
 			:components ((:file "packages")
 				     (:file "rtm-lisp-api"
 					    :depends-on ("packages"))
+				     (:file "offline-tasks"
+					    :depends-on ("packages"))
 				     (:file "rtm-model"
 					    :depends-on ("packages"
+							 "offline-tasks"
 							 "rtm-lisp-api"))))))
 
 #|
 The MIT License
 
-Copyright (c) 2008 Edgar Gonçalves
+Copyright (c) 2008, 2009, 2010 Edgar Gonçalves
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
