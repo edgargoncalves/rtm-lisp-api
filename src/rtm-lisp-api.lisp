@@ -489,7 +489,7 @@ specifies the server reply format."
 		       `(("list_id"       . ,list-id)
 			 ("taskseries_id" . ,taskseries-id)
 			 ("task_id"       . ,task-id)
-			 ,@(when (string= "" due)
+			 ,@(unless (string= "" due)
 				 `(("due"   . ,due)))
 			 ("has_due_time"  . ,has-due-time)
 			 ("parse"         . ,parse))
