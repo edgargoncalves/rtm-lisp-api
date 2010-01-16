@@ -238,14 +238,16 @@
   (declare (special *rtm-user-info*))
   (let ((temp-id (make-offline-id "tasklist")))
     (make-offline-task
-     (let* ((alist (rtm:rtm-api-lists-add name filter))
-	    (offline-task-list (find-by-id temp-id (get-task-lists *rtm-user-info*))))
-       (setf (get-id       offline-task-list) (cdrassoc :id       alist)
-	     (is-archived  offline-task-list) (from-rtm-type 'bool (cdrassoc :archived alist))
-	     (is-smart     offline-task-list) (from-rtm-type 'bool (cdrassoc :smart    alist))
-	     (is-deleted   offline-task-list) (from-rtm-type 'bool (cdrassoc :deleted  alist))
-	     (is-locked    offline-task-list) (from-rtm-type 'bool (cdrassoc :locked   alist))
-	     (get-position offline-task-list) (cdrassoc :position alist)))
+     (awhen (find-by-id temp-id (get-task-lists *rtm-user-info*))
+       ;; otherwise, we have already deleted it, so don't even bother! :d
+       (let* ((alist (rtm:rtm-api-lists-add name filter))
+	      (offline-task-list it))
+	 (setf (get-id       offline-task-list) (cdrassoc :id  alist)
+	       (is-archived  offline-task-list) (from-rtm-type 'bool (cdrassoc :archived alist))
+	       (is-smart     offline-task-list) (from-rtm-type 'bool (cdrassoc :smart    alist))
+	       (is-deleted   offline-task-list) (from-rtm-type 'bool (cdrassoc :deleted  alist))
+	       (is-locked    offline-task-list) (from-rtm-type 'bool (cdrassoc :locked   alist))
+	       (get-position offline-task-list) (cdrassoc :position alist))))
      (let ((new-list
 	    (make-instance 'task-list
 			   :id     temp-id
@@ -290,6 +292,7 @@
    (setf (get-name tl) name)))
 
 (defun get-task-lists-list ()
+  (declare (special *rtm-user-info*))
   (get-task-lists *rtm-user-info*))
 
 (defun refresh-task-lists-list ()
@@ -329,6 +332,18 @@
     (setf (get-task-lists *rtm-user-info*) task-lists)
     task-lists))
 
+
+
+(defun get-count-for-list-named (task-list-name &key filter-complete)
+  "Fetch count for badges, by name."
+  (declare (special *rtm-user-info*))
+  (let ((l (get-tasks (find-by-criteria task-list-name #'get-name (get-task-lists *rtm-user-info*)))))
+    (length (if filter-complete
+		(mapcan (lambda (x) (when (string= "" (rtm:get-completed x)) (list x))) l)
+		l))))
+
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Locations
 (defclass location (rtm-object)
@@ -340,6 +355,12 @@
    (address   :accessor get-address   :initarg :address)
    (viewable  :accessor is-viewable   :initarg :viewable)))
 
+(defmethod get-location-url ((location location) &key (zoom 19))
+   (format nil "http://maps.google.com/?q=~a@~a,~a&t=h&z=~a"
+	   (rtm:get-name location)
+	   (rtm:get-latitude location)
+	   (rtm:get-longitude location)
+	   zoom))
 
 (defun get-location-list ()
   (declare (special *rtm-user-info*))
@@ -410,7 +431,7 @@
   (declare (special *rtm-user-info*))
   (find-by-id (get-list-id task) (get-task-lists *rtm-user-info*)))
 
-(defmethod rtm-list-tasks-on-list ((wanted-list task-list) &key filter last-sync)
+(defmethod rtm-list-tasks-on-list ((wanted-list task-list) &key filter last-sync exclude-completed)
   (reverse
    (apply
     #'append
@@ -418,7 +439,9 @@
      #'(lambda (list)
 	 (mapcan
 	  #'(lambda (taskseries)
-	      (when (cdrassoc :task taskseries) ;; Make sure we have no empty taskseries, useless to us...
+	      (when (and (cdrassoc :task taskseries) ;; Make sure we have no empty taskseries, useless to us...
+			 (or (not exclude-completed)
+			     (string= "" (cdrassocchain '(:completed :task) taskseries)))) ;; filter, if needed, completed
 		(list (let* ((task (cdrassoc :task taskseries))
 			     (participants
 			      (mapcar #'(lambda (c)
@@ -456,7 +479,7 @@
 			(setf (slot-value new-task 'name) (cdrassoc :name taskseries))
 			(setf (slot-value new-task 'source) (cdrassoc :source taskseries))
 			(setf (slot-value new-task 'url) (cdrassoc :url taskseries))
-			(setf (slot-value new-task 'location-id) (cdrassoc :location-id taskseries))
+			(setf (slot-value new-task 'location-id) (cdrassoc :location_id taskseries))
 			(setf (slot-value new-task 'tags) tags)
 			(setf (slot-value new-task 'recurrence) recurrence)
 			(setf (slot-value new-task 'participants) participants)
@@ -479,38 +502,46 @@
 				 :filter filter
 				 :last-sync last-sync)))))
 
-(defun rtm-refresh-all-lists (&key smart-only)
+(defun rtm-refresh-all-lists (&key smart-only exclude-completed)
   (dolist (l (get-task-lists *rtm-user-info*))
     (unless (and smart-only (not (is-smart l))) 
-      (rtm-refresh-list l))))
+      (rtm-refresh-list l :exclude-completed exclude-completed))))
 
-(defmethod rtm-refresh-list ((list task-list))
-  (setf (get-tasks list) (rtm-list-tasks-on-list list)))
+(defmethod rtm-refresh-list ((list task-list) &key exclude-completed)
+  (setf (get-tasks list) (rtm-list-tasks-on-list list :exclude-completed exclude-completed))
+  (awhen (find-by-id (get-id list) (get-task-lists-list))
+    (unless (eq list it)
+      (setf (get-tasks it) (get-tasks list)))))
 
-(defmethod rtm-refresh-list ((list-id simple-base-string))
-  (rtm-refresh-list (find-by-id list-id (get-task-lists *rtm-user-info*))))
+(defmethod rtm-refresh-list ((list-id simple-base-string) &key exclude-completed)
+  (rtm-refresh-list (find-by-id list-id (get-task-lists *rtm-user-info*))
+		     :exclude-completed exclude-completed))
 
 ;; when RTM API supports reading of smartlist criteria, i could parse it and compute their value again, offline.
 ;; for now, a remote update is required.
 
 (defmethod rtm-add-task ((list task-list) name &optional (parse-date-in-name-p nil))
   (let ((temp-id (make-offline-id "task")))
+    (when (is-smart list)
+      (setf list (find-by-criteria "Inbox" #'get-name (get-task-lists-list))))
     (make-offline-task
      ;;remote task
-     (let* ((alist (cdrassoc :list (rtm:rtm-api-tasks-add (get-id list)
-							  name
-							  (to-rtm-type 'bool parse-date-in-name-p))))
-	    (taskseries (cdrassoc :taskseries alist))
-	    (task (cdrassoc :task taskseries))
-	    (task-id (cdrassoc :id task)))
-       
-       ;; update the stub id so that further changes on that task can be modified correctly:
-       (let ((offline-task (find-by-id temp-id (get-tasks list))))
-	 (setf (get-id offline-task) task-id
-	       (get-taskseries-id offline-task) (cdrassoc :id taskseries)))
-       
-       ;; To reflect smartlists, one should recalculate all lists again:
-       (rtm-refresh-all-lists :smart-only t))
+     ;;check whether the task is still on this list:
+     (awhen (find-by-id temp-id (get-tasks list))
+       (let* ((alist (cdrassoc :list (rtm:rtm-api-tasks-add (get-id list)
+							    name
+							    (to-rtm-type 'bool parse-date-in-name-p))))
+	      (taskseries (cdrassoc :taskseries alist))
+	      (task (cdrassoc :task taskseries))
+	      (task-id (cdrassoc :id task)))
+	 
+	 ;; update the stub id so that further changes on that task can be modified correctly:
+	 (let ((offline-task it))
+	   (setf (get-id offline-task) task-id
+		 (get-taskseries-id offline-task) (cdrassoc :id taskseries)))
+	 
+	 ;; To reflect smartlists, one should update them:
+	 (rtm-refresh-all-lists :smart-only t)))
      
      
      ;;local task
@@ -579,7 +610,7 @@
 					(get-id task))))
        (setf (get-completed task)
 	     (cdrassocchain '(:completed :task :taskseries :list) result)))
-     (setf (get-completed task) (get-current-time-string))))) ;;TODO: change this to a local time
+     (setf (get-completed task) (get-current-time-string))))) 
 
 
 (defmethod rtm-uncomplete-task ((task task))
@@ -592,26 +623,28 @@
 
 
 (defmethod rtm-delete-task ((task task))
-  (make-offline-task
+  (let ((list-id (get-list-id task)))
 
-   (let* ((list-id (get-list-id task))
-	  (result
-	   (rtm:rtm-api-tasks-delete list-id
-				     (get-taskseries-id task)
-				     (get-id task))))
-     (setf (get-deleted task)
-	   (cdrassocchain '(:deleted :task :taskseries :list) result))
-     (rtm-refresh-list list-id)
-     ;; To reflect smartlists, one should recalculate all lists again:
-     (rtm-refresh-all-lists :smart-only t))
-   
-   (awhen (find-by-id (get-list-id task)
-		      (get-task-lists *rtm-user-info*))
-     (setf (get-tasks it)
-	   (remove (get-id task)
-		   (get-tasks it)
-		   :key #'get-id
-		   :test #'string=)))))
+    (make-offline-task
+
+     (unless (or (string= "" (get-taskseries-id task))
+		 (offline-id-p (get-id task))) ;; otherwise there is no such task online, yet!
+       (let ((result
+	      (rtm:rtm-api-tasks-delete list-id
+					(get-taskseries-id task)
+					(get-id task))))
+	 (setf (get-deleted task)
+	       (cdrassocchain '(:deleted :task :taskseries :list) result))
+	 ;; (rtm-refresh-list list-id)
+	 ;; To reflect smartlists, one should recalculate all lists again:
+	 (rtm-refresh-all-lists :smart-only t)))
+     
+     (awhen (find-by-id list-id (get-task-lists-list))
+       (setf (get-tasks it)
+	     (remove (get-id task)
+		     (get-tasks it)
+		     :key #'get-id
+		     :test #'string=))))))
 
 (defmethod rtm-move-task-priority ((task task) move-up-p)
   (make-offline-task
@@ -839,13 +872,13 @@
 	  (get-fullname   *rtm-user-info*) (cdrassoc :fullname rtm:*rtm-api-user*))
     result))
 
-(defun refresh-rtm ()
+(defun refresh-rtm (&key exclude-completed)
   "Reloads data from the network"
   (refresh-contact-list)
   (refresh-contact-group-list)
   (refresh-location-list)
   (refresh-task-lists-list)
-  (rtm-refresh-all-lists))
+  (rtm-refresh-all-lists :exclude-completed exclude-completed))
 
 
 ;;; Tests:

@@ -28,6 +28,7 @@
 (defmethod perform-remote-task ((task offline-task))
   (declare (special offline-buffer))
   (handler-case (progn
+		  ;;TODO - try to remove this. large grain lock can be tough...
 		  (funcall (get-online-form task))
 		  (ccl:with-lock-grabbed (*buffer-lock*)
 		    (setf offline-buffer (remove task offline-buffer))

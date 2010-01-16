@@ -157,10 +157,22 @@
    #:get-task-lists-list
    #:refresh-task-lists-list
    #:rtm-list-task-lists
+   #:get-count-for-list-named
+
    #:location
+   #:get-name     
+   #:get-id       
+   #:get-longitude
+   #:get-latitude 
+   #:get-zoom     
+   #:get-address
+   #:get-location-url
+   #:get-location-image-url
+   #:is-viewable
    #:get-location-list
    #:refresh-location-list
    #:list-locations
+
    #:task
    #:get-list-id       
    #:get-taskseries-id 
@@ -205,6 +217,7 @@
    #:rtm-change-task-priority
    #:rtm-change-task-recurrence
    #:rtm-change-task-url
+
    #:note
    #:rtm-add-note-to-task
    #:rtm-delete-note
