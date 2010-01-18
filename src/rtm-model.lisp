@@ -362,6 +362,16 @@
 	   (rtm:get-longitude location)
 	   zoom))
 
+(defmethod get-location-image-url ((location location) &key (zoom 19) (maptype "roadmap") (width 512) (height 512))
+   (format nil "http://maps.google.com/maps/api/staticmap?center=Location&zoom=~a&size=~ax~a&maptype=~a&markers=color%3Ablue%7Clabel%3AA%7C~a,~a&sensor=false"
+	   zoom
+	   width
+	   height
+	   maptype
+	   (rtm:get-latitude location)
+	   (rtm:get-longitude location)))
+
+
 (defun get-location-list ()
   (declare (special *rtm-user-info*))
   (get-locations *rtm-user-info*))
