@@ -45,21 +45,23 @@
 (defmethod undo-task ((task offline-task))
   (eval (get-undo-form task)))
 
-(defmacro make-offline-task (online-form local-form &optional undo-form &key (sync-immediatly t))
+(defmacro make-offline-task (online-form local-form &optional undo-form &key (sync-immediatly t) (run-online-only nil))
   `(let ((task (make-instance 'offline-task
 			      :online-form #'(lambda () ,online-form)
 			      :local-form  #'(lambda () ,local-form)
 			      :undo-form   #'(lambda () ,undo-form))))
      (declare (special offline-state-needs-remote-sync offline-buffer))
 
-     (ccl:with-lock-grabbed (*buffer-lock*)
-       (push task offline-buffer))
-     
-     (let ((offline-result ,local-form))
-       (setf offline-state-needs-remote-sync t)
-       (when ,sync-immediatly
-	 (offline-remote-sync-all))
-       offline-result)))
+     (if ,run-online-only
+	 (progn ,local-form ,online-form)
+	 (progn
+	   (ccl:with-lock-grabbed (*buffer-lock*)
+	     (push task offline-buffer))
+	   (let ((offline-result ,local-form))
+	     (setf offline-state-needs-remote-sync t)
+	     (when ,sync-immediatly
+	       (offline-remote-sync-all))
+	     offline-result)))))
 
 
 (defun offline-remote-sync-all ()
