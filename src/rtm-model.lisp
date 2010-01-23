@@ -240,7 +240,7 @@
     (make-offline-task
      (awhen (find-by-id temp-id (get-task-lists *rtm-user-info*))
        ;; otherwise, we have already deleted it, so don't even bother! :d
-       (let* ((alist (rtm:rtm-api-lists-add name filter))
+       (let ((alist (rtm:rtm-api-lists-add name (or filter ""))) ;; protect agains nil passed values
 	      (offline-task-list it))
 	 (setf (get-id       offline-task-list) (cdrassoc :id  alist)
 	       (is-archived  offline-task-list) (from-rtm-type 'bool (cdrassoc :archived alist))
