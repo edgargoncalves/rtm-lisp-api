@@ -234,7 +234,7 @@
    (filter     :accessor get-filter     :initarg :filter :initform "")
    (tasks      :accessor get-tasks      :initarg :tasks :initform nil)))
 
-(defun rtm-add-task-list (name &optional (filter ""))
+(defun rtm-add-task-list (name &optional (filter "") &key (offline t))
   (declare (special *rtm-user-info*))
   (let ((temp-id (make-offline-id "tasklist")))
     (make-offline-task
@@ -258,7 +258,8 @@
 		(get-task-lists *rtm-user-info*)
 		:key #'get-id
 		:test #'string=)
-       new-list))))
+       new-list)
+     :run-online-only (not offline))))
 
 (defmethod rtm-delete-task-list ((tl task-list))
   (declare (special *rtm-user-info*))
@@ -299,16 +300,18 @@
   (declare (special *rtm-user-info*))
   (let ((task-lists
 	 (mapcar (lambda (l)
-		   (make-instance 'task-list
-				  :name       (cdrassoc :name l)
-				  :id         (cdrassoc :id l)
-				  :position   (cdrassoc :position l)
-				  :sort-order (cdrassoc :sort_order l)
-				  :archived   (from-rtm-type 'bool (cdrassoc :archived l))
-				  :smart      (from-rtm-type 'bool (cdrassoc :smart l))
-				  :locked     (from-rtm-type 'bool (cdrassoc :locked l))
-				  :deleted    (from-rtm-type 'bool (cdrassoc :deleted l))
-				  :tasks      nil))
+		   (let* ((id (cdrassoc :id l))
+			  (tasklist (or (find-by-id id (get-task-lists *rtm-user-info*))
+					(make-instance 'task-list :id id))))
+		     (setf (slot-value tasklist 'name)       (cdrassoc :name l))
+		     (setf (slot-value tasklist 'id)         (cdrassoc :id l))
+		     (setf (slot-value tasklist 'position)   (cdrassoc :position l))
+		     (setf (slot-value tasklist 'sort-order) (cdrassoc :sort_order l))
+		     (setf (slot-value tasklist 'archived)   (from-rtm-type 'bool (cdrassoc :archived l)))
+		     (setf (slot-value tasklist 'smart)      (from-rtm-type 'bool (cdrassoc :smart l)))
+		     (setf (slot-value tasklist 'locked)     (from-rtm-type 'bool (cdrassoc :locked l)))
+		     (setf (slot-value tasklist 'deleted)    (from-rtm-type 'bool (cdrassoc :deleted l)))
+		     tasklist))
 		 (rtm:rtm-api-lists-get-list))))
     (setf (get-task-lists *rtm-user-info*) task-lists)
     task-lists))
