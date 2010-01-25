@@ -222,8 +222,9 @@
    #:rtm-add-note-to-task
    #:rtm-delete-note
    #:rtm-edit-note
-   
-   ))
+   #:get-task
+   #:get-title
+   #:get-contents))
 #|
 The MIT License
 

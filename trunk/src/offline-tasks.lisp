@@ -45,7 +45,7 @@
 (defmethod undo-task ((task offline-task))
   (eval (get-undo-form task)))
 
-(defmacro make-offline-task (online-form local-form &optional undo-form &key (sync-immediatly t) (run-online-only nil))
+(defmacro make-offline-task (online-form local-form &key undo-form (sync-immediatly t) (run-online-only nil))
   `(let ((task (make-instance 'offline-task
 			      :online-form #'(lambda () ,online-form)
 			      :local-form  #'(lambda () ,local-form)
