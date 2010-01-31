@@ -142,12 +142,10 @@ specifies the server reply format."
 		       ,@key-value-pairs))
 	 (api-sig (compute-rtm-api-sig parameters)))
     (multiple-value-bind (result)
-	(http-request rtm-api-endpoint
-		      :method :post
-		      :parameters `(
-				    ,@parameters
-				    ("api_sig" . ,api-sig)))
-
+	(progn
+	  (http-request rtm-api-endpoint
+			:method :post
+			:parameters `(,@parameters ("api_sig" . ,api-sig))))
       (let* ((response (json-bind (rsp) result rsp))
 	     (stat (assoc :stat response)))
 	(cond

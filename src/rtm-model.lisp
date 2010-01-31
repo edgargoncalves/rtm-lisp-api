@@ -683,9 +683,10 @@
 
 (defmethod rtm-move-task-to-list ((task task) (list task-list))
   (unless (equal (get-id list) (get-list-id task))
+    (let ((from-list-id (get-list-id task)))
     (make-offline-task
 
-     (rtm:rtm-api-tasks-move-to (get-list-id task)
+     (rtm:rtm-api-tasks-move-to from-list-id
 				(get-id list)
 				(get-taskseries-id task)
 				(get-id task))
@@ -697,7 +698,7 @@
 	 (setf (get-tasks old-list)
 	       (delete-if (lambda (x) (string= (get-id x) (get-id task)))
 			  (get-tasks old-list))))
-       (pushnew task (get-tasks list) :key #'get-id :test #'string=)))))
+       (pushnew task (get-tasks list) :key #'get-id :test #'string=))))))
 
 (defmethod rtm-postpone-task ((task task))
   (make-offline-task
@@ -744,7 +745,7 @@
      
      (setf (get-estimate task) estimate))))
 
-(defmethod rtm-change-task-location ((task task) (location list))
+(defmethod rtm-change-task-location ((task task) (location list)) ;;handles nil values, to remove a location.
   (when (null location)
     (make-offline-task
      (rtm:rtm-api-tasks-set-location (get-list-id task)
@@ -865,14 +866,21 @@
 		    (get-notes (get-task n))))))
 
 (defmethod rtm-edit-note ((n note) new-title new-text)
-  (make-offline-task
-   (let ((alist (rtm:rtm-api-tasks-notes-edit (get-id n) new-title new-text)))
-     (setf (get-modified n) (cdrassoc :modified alist))
-     n)
-   (progn
-     (setf (get-title n)    new-title
-	   (get-contents n) new-text)
-     n)))
+  (let ((title-p (and new-title (not (string= new-title ""))))
+	(text-p  (and new-text  (not (string= new-text  "")))))
+    (when (or title-p text-p)
+      (unless title-p
+	(setf new-title (get-title n)))
+      (unless text-p
+	(setf new-text  (get-contents n)))
+      (make-offline-task
+       (let ((alist (rtm:rtm-api-tasks-notes-edit (get-id n) new-title new-text)))
+	 (setf (get-modified n) (cdrassoc :modified alist))
+	 n)
+       (progn
+	 (setf (get-title n)    new-title
+	       (get-contents n) new-text)
+	 n)))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
